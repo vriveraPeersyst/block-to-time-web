@@ -1,0 +1,106 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Auth.js models ──────────────────────────────────────
+
+model User {
+  id            String       @id @default(uuid())
+  name          String?
+  email         String?      @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  blockWatches  BlockWatch[]
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+}
+
+model Account {
+  id                String  @id @default(uuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── App models ──────────────────────────────────────────
+
+enum Network {
+  XRPL_EVM_MAINNET
+  XRPL_EVM_TESTNET
+}
+
+enum NotificationTier {
+  ONE_DAY
+  SIX_HOURS
+  ONE_HOUR
+  FIFTEEN_MINUTES
+  FIVE_MINUTES
+}
+
+model BlockWatch {
+  id              String           @id @default(uuid())
+  userId          String
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email           String?
+  slackWebhookUrl String?
+  network         Network
+  targetBlock     BigInt
+  currentBlock    BigInt
+  estimatedTime   DateTime
+  timezone        String           @default("UTC")
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  notifications   Notification[]
+
+  @@index([userId])
+  @@index([estimatedTime])
+  @@index([network, targetBlock])
+}
+
+model Notification {
+  id           String           @id @default(uuid())
+  blockWatchId String
+  blockWatch   BlockWatch       @relation(fields: [blockWatchId], references: [id], onDelete: Cascade)
+  tier         NotificationTier
+  sentAt       DateTime?
+  scheduledFor DateTime
+  sent         Boolean          @default(false)
+
+  @@unique([blockWatchId, tier])
+  @@index([sent, scheduledFor])
+}
