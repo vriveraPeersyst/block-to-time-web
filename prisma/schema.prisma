@@ -84,6 +84,7 @@ model BlockWatch {
   currentBlock    BigInt
   estimatedTime   DateTime
   timezone        String           @default("UTC")
+  reachedNotifiedAt DateTime?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   notifications   Notification[]

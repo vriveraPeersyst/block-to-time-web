@@ -31,7 +31,9 @@ async function processNotifications(): Promise<NextResponse> {
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://blocktotime.app";
 
   try {
-    // Find all notifications that are due and haven't been sent
+    const results: Array<{ id: string; tier: string; status: string; note?: string; error?: string }> = [];
+
+    // ── Pass 1: Process pending tier notifications ────────
     const pendingNotifications = await prisma.notification.findMany({
       where: {
         sent: false,
@@ -40,10 +42,8 @@ async function processNotifications(): Promise<NextResponse> {
       include: {
         blockWatch: true,
       },
-      take: 50, // Process in batches
+      take: 50,
     });
-
-    const results = [];
 
     for (const notification of pendingNotifications) {
       const bw = notification.blockWatch;
@@ -53,13 +53,11 @@ async function processNotifications(): Promise<NextResponse> {
         let blockReached = false;
 
         try {
-          // Re-estimate the block time for fresh data
           estimate = await estimateBlockTime(
             bw.network as Network,
             Number(bw.targetBlock)
           );
         } catch (err) {
-          // Block already reached — send a final notification
           if (err instanceof Error && err.message.includes("already been reached")) {
             blockReached = true;
           } else {
@@ -68,8 +66,7 @@ async function processNotifications(): Promise<NextResponse> {
         }
 
         if (blockReached) {
-          // Send "block reached" notification and mark all as sent
-          if (bw.slackWebhookUrl) {
+          if (bw.slackWebhookUrl && !bw.reachedNotifiedAt) {
             const calendarLinks = buildCalendarLinks({
               targetBlock: Number(bw.targetBlock),
               network: bw.network as Network,
@@ -89,10 +86,13 @@ async function processNotifications(): Promise<NextResponse> {
             });
           }
 
-          // Mark all unsent notifications as sent
           await prisma.notification.updateMany({
             where: { blockWatchId: bw.id, sent: false },
             data: { sent: true, sentAt: new Date() },
+          });
+          await prisma.blockWatch.update({
+            where: { id: bw.id },
+            data: { reachedNotifiedAt: new Date() },
           });
 
           results.push({
@@ -131,7 +131,6 @@ async function processNotifications(): Promise<NextResponse> {
           }
         }
 
-        // Build calendar links with updated time
         const calendarLinks = buildCalendarLinks({
           targetBlock: Number(bw.targetBlock),
           network: bw.network as Network,
@@ -140,7 +139,6 @@ async function processNotifications(): Promise<NextResponse> {
           baseUrl,
         });
 
-        // Send Slack notification if webhook is set
         if (bw.slackWebhookUrl) {
           await sendSlackNotification(bw.slackWebhookUrl, {
             blockWatchId: bw.id,
@@ -154,7 +152,6 @@ async function processNotifications(): Promise<NextResponse> {
           });
         }
 
-        // Mark as sent
         await prisma.notification.update({
           where: { id: notification.id },
           data: { sent: true, sentAt: new Date() },
@@ -171,6 +168,72 @@ async function processNotifications(): Promise<NextResponse> {
         results.push({
           id: notification.id,
           tier: notification.tier,
+          status: "failed",
+          error: message,
+        });
+      }
+    }
+
+    // ── Pass 2: Check for reached blocks (all tiers sent but no REACHED notification) ──
+    const unreachedWatches = await prisma.blockWatch.findMany({
+      where: {
+        reachedNotifiedAt: null,
+        slackWebhookUrl: { not: null },
+        notifications: { every: { sent: true } },
+      },
+      take: 20,
+    });
+
+    for (const bw of unreachedWatches) {
+      try {
+        let blockReached = false;
+
+        try {
+          await estimateBlockTime(bw.network as Network, Number(bw.targetBlock));
+        } catch (err) {
+          if (err instanceof Error && err.message.includes("already been reached")) {
+            blockReached = true;
+          }
+        }
+
+        if (!blockReached) continue;
+
+        const calendarLinks = buildCalendarLinks({
+          targetBlock: Number(bw.targetBlock),
+          network: bw.network as Network,
+          estimatedDate: new Date(),
+          blockWatchId: bw.id,
+          baseUrl,
+        });
+
+        await sendSlackNotification(bw.slackWebhookUrl!, {
+          blockWatchId: bw.id,
+          targetBlock: Number(bw.targetBlock),
+          network: bw.network as Network,
+          estimatedDate: new Date(),
+          currentBlock: Number(bw.targetBlock),
+          blocksRemaining: 0,
+          tier: "REACHED",
+          calendarLinks,
+        });
+
+        await prisma.blockWatch.update({
+          where: { id: bw.id },
+          data: { reachedNotifiedAt: new Date() },
+        });
+
+        results.push({
+          id: bw.id,
+          tier: "REACHED",
+          status: "sent",
+          note: "block reached — final notification",
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unknown error";
+        results.push({
+          id: bw.id,
+          tier: "REACHED",
           status: "failed",
           error: message,
         });
