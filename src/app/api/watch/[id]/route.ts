@@ -40,3 +40,28 @@ export async function GET(
     })),
   });
 }
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const userId = await getAuthenticatedUserId();
+  if (userId instanceof NextResponse) return userId;
+
+  const { id } = await params;
+
+  const blockWatch = await prisma.blockWatch.findUnique({
+    where: { id, userId },
+  });
+
+  if (!blockWatch) {
+    return NextResponse.json(
+      { error: "Block watch not found" },
+      { status: 404 }
+    );
+  }
+
+  await prisma.blockWatch.delete({ where: { id } });
+
+  return NextResponse.json({ deleted: true });
+}

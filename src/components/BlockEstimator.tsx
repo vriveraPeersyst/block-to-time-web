@@ -6,6 +6,16 @@ import type { Network } from "@/lib/networks";
 
 type Mode = "block-to-time" | "time-to-block";
 
+interface ActiveWatch {
+  id: string;
+  targetBlock: number;
+  network: string;
+  estimatedTime: string;
+  slackWebhookUrl: string | null;
+  createdAt: string;
+  notifications: { tier: string; scheduledFor: string; sent: boolean }[];
+}
+
 interface BlockEstimate {
   currentBlock: number;
   targetBlock: number;
@@ -66,11 +76,58 @@ export default function BlockEstimator() {
   const [error, setError] = useState("");
   const [showSubscribe, setShowSubscribe] = useState(false);
   const [timezones, setTimezones] = useState<string[]>([]);
+  const [savedWebhooks, setSavedWebhooks] = useState<string[]>([]);
+  const [watches, setWatches] = useState<ActiveWatch[]>([]);
+  const [loadingWatches, setLoadingWatches] = useState(false);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   useEffect(() => {
     setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone);
     setTimezones(Intl.supportedValuesOf("timeZone"));
+
+    // Restore state after OAuth redirect
+    const saved = sessionStorage.getItem("blockToTimeState");
+    if (saved) {
+      try {
+        const s = JSON.parse(saved);
+        if (s.mode) setMode(s.mode);
+        if (s.network) setNetwork(s.network);
+        if (s.targetBlock) setTargetBlock(s.targetBlock);
+        if (s.targetTime) setTargetTime(s.targetTime);
+        if (s.showSubscribe) setShowSubscribe(true);
+      } catch { /* ignore */ }
+      sessionStorage.removeItem("blockToTimeState");
+    }
   }, []);
+
+  // Fetch user's watches & saved webhooks when authenticated
+  const fetchWatches = useCallback(async () => {
+    setLoadingWatches(true);
+    try {
+      const res = await fetch("/api/watches");
+      if (res.ok) {
+        const data: ActiveWatch[] = await res.json();
+        setWatches(data);
+        // Extract unique webhook URLs
+        const hooks = data
+          .map((w) => w.slackWebhookUrl)
+          .filter((h): h is string => !!h && !h.startsWith("..."));
+        // We only have masked URLs from the list endpoint, so store full ones from subscribe responses
+      }
+    } catch { /* ignore */ }
+    setLoadingWatches(false);
+  }, []);
+
+  useEffect(() => {
+    if (session?.user) {
+      fetchWatches();
+      // Load saved webhooks from localStorage
+      const stored = localStorage.getItem("savedWebhooks");
+      if (stored) {
+        try { setSavedWebhooks(JSON.parse(stored)); } catch { /* ignore */ }
+      }
+    }
+  }, [session, fetchWatches]);
 
 
 
@@ -128,6 +185,17 @@ export default function BlockEstimator() {
     }
   }, [targetTime, network]);
 
+  const handleCancelWatch = async (watchId: string) => {
+    setCancellingId(watchId);
+    try {
+      const res = await fetch(`/api/watch/${watchId}`, { method: "DELETE" });
+      if (res.ok) {
+        setWatches((prev) => prev.filter((w) => w.id !== watchId));
+      }
+    } catch { /* ignore */ }
+    setCancellingId(null);
+  };
+
   const handleSubscribe = async () => {
     if (!estimate || !slackWebhook) return;
 
@@ -154,6 +222,16 @@ export default function BlockEstimator() {
 
       setSubscribeResult(data);
       setShowSubscribe(false);
+
+      // Save webhook for reuse
+      if (slackWebhook) {
+        const updated = Array.from(new Set([slackWebhook, ...savedWebhooks])).slice(0, 5);
+        setSavedWebhooks(updated);
+        localStorage.setItem("savedWebhooks", JSON.stringify(updated));
+      }
+
+      // Refresh watches list
+      fetchWatches();
     } catch {
       setError("Failed to subscribe.");
     } finally {
@@ -291,7 +369,10 @@ export default function BlockEstimator() {
           </div>
         ) : (
           <button
-            onClick={() => signIn("google")}
+            onClick={() => {
+              sessionStorage.setItem("blockToTimeState", JSON.stringify({ mode, network, targetBlock, targetTime }));
+              signIn("google");
+            }}
             className="text-sm px-4 py-2 bg-muted hover:bg-accent text-muted-foreground rounded-lg border border-border transition-all flex items-center gap-2"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24">
@@ -611,7 +692,10 @@ export default function BlockEstimator() {
               <>
                 {!session?.user ? (
                   <button
-                    onClick={() => signIn("google")}
+                    onClick={() => {
+                      sessionStorage.setItem("blockToTimeState", JSON.stringify({ mode, network, targetBlock, targetTime, showSubscribe: true }));
+                      signIn("google");
+                    }}
                     className="w-full py-2.5 bg-muted hover:bg-accent text-muted-foreground text-sm rounded-lg transition-all border border-border"
                   >
                     🔔 Sign in to subscribe for notifications
@@ -629,6 +713,27 @@ export default function BlockEstimator() {
                       <label className="block text-sm text-muted-foreground mb-1">
                         Slack Webhook URL
                       </label>
+                      {savedWebhooks.length > 0 && (
+                        <div className="mb-2">
+                          <p className="text-xs text-muted-foreground/70 mb-1">Saved webhooks:</p>
+                          <div className="flex flex-wrap gap-1">
+                            {savedWebhooks.map((hook) => (
+                              <button
+                                key={hook}
+                                type="button"
+                                onClick={() => setSlackWebhook(hook)}
+                                className={`text-xs px-2 py-1 rounded border transition-all ${
+                                  slackWebhook === hook
+                                    ? "bg-primary/20 border-primary/40 text-primary"
+                                    : "bg-muted border-border text-muted-foreground hover:bg-accent"
+                                }`}
+                              >
+                                ...{hook.slice(-12)}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       <input
                         type="url"
                         value={slackWebhook}
@@ -788,6 +893,87 @@ export default function BlockEstimator() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Active Block Watches */}
+      {session?.user && watches.length > 0 && (
+        <div className="mt-6 animate-fade-in">
+          <div className="bg-card border border-border rounded-xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">Tracking Blocks</h2>
+              <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full">
+                {watches.length} active
+              </span>
+            </div>
+            <div className="space-y-3">
+              {watches.map((w) => {
+                const isPast = new Date(w.estimatedTime) < new Date();
+                const allSent = w.notifications.every((n) => n.sent);
+                return (
+                  <div
+                    key={w.id}
+                    className="bg-muted/30 border border-border rounded-lg p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="text-sm font-mono font-medium text-foreground">
+                            Block {w.targetBlock.toLocaleString()}
+                          </p>
+                          <span className={`text-xs px-1.5 py-0.5 rounded ${
+                            w.network === "XRPL_EVM_MAINNET"
+                              ? "bg-primary/20 text-primary"
+                              : "bg-secondary/20 text-secondary"
+                          }`}>
+                            {w.network === "XRPL_EVM_MAINNET" ? "Mainnet" : "Testnet"}
+                          </span>
+                          {isPast || allSent ? (
+                            <span className="text-xs bg-chart-2/20 text-chart-2 px-1.5 py-0.5 rounded">
+                              Completed
+                            </span>
+                          ) : (
+                            <span className="text-xs bg-chart-3/20 text-chart-3 px-1.5 py-0.5 rounded">
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Est. {formatDate(w.estimatedTime)}
+                        </p>
+                        <div className="flex gap-1 mt-2">
+                          {w.notifications.map((n) => (
+                            <span
+                              key={n.tier}
+                              title={`${n.tier.replace(/_/g, " ")} — ${n.sent ? "Sent" : "Pending"}`}
+                              className={`w-2 h-2 rounded-full ${
+                                n.sent ? "bg-chart-2" : "bg-muted-foreground/30"
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      {!isPast && !allSent && (
+                        <button
+                          onClick={() => handleCancelWatch(w.id)}
+                          disabled={cancellingId === w.id}
+                          className="text-xs px-3 py-1.5 bg-destructive/20 hover:bg-destructive/30 text-destructive-foreground rounded-lg transition-all disabled:opacity-50"
+                        >
+                          {cancellingId === w.id ? "..." : "Cancel"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {session?.user && loadingWatches && watches.length === 0 && (
+        <div className="mt-6 text-center">
+          <div className="h-8 w-32 mx-auto bg-muted rounded-lg animate-pulse" />
         </div>
       )}
 
