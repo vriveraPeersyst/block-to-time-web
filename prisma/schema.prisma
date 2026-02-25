@@ -76,6 +76,7 @@ model BlockWatch {
   id              String           @id @default(uuid())
   userId          String
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title           String?          @default("")
   email           String?
   slackWebhookUrl String?
   network         Network

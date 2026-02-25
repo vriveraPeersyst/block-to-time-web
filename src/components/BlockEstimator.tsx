@@ -8,6 +8,7 @@ type Mode = "block-to-time" | "time-to-block";
 
 interface ActiveWatch {
   id: string;
+  title: string;
   targetBlock: number;
   network: string;
   estimatedTime: string;
@@ -80,6 +81,8 @@ export default function BlockEstimator() {
   const [watches, setWatches] = useState<ActiveWatch[]>([]);
   const [loadingWatches, setLoadingWatches] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [watchTitle, setWatchTitle] = useState("");
+  const [watchTab, setWatchTab] = useState<"active" | "completed">("active");
 
   useEffect(() => {
     setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone);
@@ -211,6 +214,7 @@ export default function BlockEstimator() {
           network,
           timezone,
           slackWebhookUrl: slackWebhook,
+          title: watchTitle,
         }),
       });
       const data = await res.json();
@@ -222,6 +226,7 @@ export default function BlockEstimator() {
 
       setSubscribeResult(data);
       setShowSubscribe(false);
+      setWatchTitle("");
 
       // Save webhook for reuse
       if (slackWebhook) {
@@ -711,6 +716,18 @@ export default function BlockEstimator() {
                   <div className="space-y-3 animate-fade-in">
                     <div>
                       <label className="block text-sm text-muted-foreground mb-1">
+                        Title <span className="text-muted-foreground/50">(optional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={watchTitle}
+                        onChange={(e) => setWatchTitle(e.target.value)}
+                        placeholder="e.g. Mainnet upgrade, Token launch..."
+                        className="w-full px-4 py-2.5 bg-input border border-border rounded-lg text-foreground placeholder-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm text-muted-foreground mb-1">
                         Slack Webhook URL
                       </label>
                       {savedWebhooks.length > 0 && (
@@ -908,77 +925,139 @@ export default function BlockEstimator() {
         </div>
       )}
 
-      {/* Active Block Watches */}
+      {/* Block Watches with Active / Completed tabs */}
       {session?.user && watches.length > 0 && (
         <div className="mt-6 animate-fade-in">
           <div className="bg-card border border-border rounded-xl p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">Tracking Blocks</h2>
-              <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded-full">
-                {watches.length} active
-              </span>
             </div>
-            <div className="space-y-3">
-              {watches.map((w) => {
+
+            {/* Tabs */}
+            {(() => {
+              const activeWatches = watches.filter((w) => {
                 const isPast = new Date(w.estimatedTime) < new Date();
                 const allSent = w.notifications.every((n) => n.sent);
-                return (
-                  <div
-                    key={w.id}
-                    className="bg-muted/30 border border-border rounded-lg p-4"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <p className="text-sm font-mono font-medium text-foreground">
-                            Block {w.targetBlock.toLocaleString()}
-                          </p>
-                          <span className={`text-xs px-1.5 py-0.5 rounded ${
-                            w.network === "XRPL_EVM_MAINNET"
-                              ? "bg-primary/20 text-primary"
-                              : "bg-secondary/20 text-secondary"
-                          }`}>
-                            {w.network === "XRPL_EVM_MAINNET" ? "Mainnet" : "Testnet"}
-                          </span>
-                          {isPast || allSent ? (
-                            <span className="text-xs bg-chart-2/20 text-chart-2 px-1.5 py-0.5 rounded">
-                              Completed
-                            </span>
-                          ) : (
-                            <span className="text-xs bg-chart-3/20 text-chart-3 px-1.5 py-0.5 rounded">
-                              Active
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          Est. {formatDate(w.estimatedTime)}
-                        </p>
-                        <div className="flex gap-1 mt-2">
-                          {w.notifications.map((n) => (
-                            <span
-                              key={n.tier}
-                              title={`${n.tier.replace(/_/g, " ")} — ${n.sent ? "Sent" : "Pending"}`}
-                              className={`w-2 h-2 rounded-full ${
-                                n.sent ? "bg-chart-2" : "bg-muted-foreground/30"
-                              }`}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                      {!isPast && !allSent && (
-                        <button
-                          onClick={() => handleCancelWatch(w.id)}
-                          disabled={cancellingId === w.id}
-                          className="text-xs px-3 py-1.5 bg-destructive/20 hover:bg-destructive/30 text-destructive-foreground rounded-lg transition-all disabled:opacity-50"
-                        >
-                          {cancellingId === w.id ? "..." : "Cancel"}
-                        </button>
+                return !isPast && !allSent;
+              });
+              const completedWatches = watches.filter((w) => {
+                const isPast = new Date(w.estimatedTime) < new Date();
+                const allSent = w.notifications.every((n) => n.sent);
+                return isPast || allSent;
+              });
+              const displayedWatches = watchTab === "active" ? activeWatches : completedWatches;
+
+              return (
+                <>
+                  <div className="flex gap-1 mb-4 p-1 bg-muted/30 rounded-lg">
+                    <button
+                      onClick={() => setWatchTab("active")}
+                      className={`flex-1 py-1.5 px-3 text-sm rounded-md transition-all ${
+                        watchTab === "active"
+                          ? "bg-card text-foreground font-medium shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      Active
+                      {activeWatches.length > 0 && (
+                        <span className="ml-1.5 text-xs bg-chart-3/20 text-chart-3 px-1.5 py-0.5 rounded-full">
+                          {activeWatches.length}
+                        </span>
                       )}
-                    </div>
+                    </button>
+                    <button
+                      onClick={() => setWatchTab("completed")}
+                      className={`flex-1 py-1.5 px-3 text-sm rounded-md transition-all ${
+                        watchTab === "completed"
+                          ? "bg-card text-foreground font-medium shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      Completed
+                      {completedWatches.length > 0 && (
+                        <span className="ml-1.5 text-xs bg-chart-2/20 text-chart-2 px-1.5 py-0.5 rounded-full">
+                          {completedWatches.length}
+                        </span>
+                      )}
+                    </button>
                   </div>
-                );
-              })}
-            </div>
+
+                  {displayedWatches.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-6">
+                      {watchTab === "active" ? "No active watches" : "No completed watches"}
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {displayedWatches.map((w) => {
+                        const isPast = new Date(w.estimatedTime) < new Date();
+                        const allSent = w.notifications.every((n) => n.sent);
+                        const isCompleted = isPast || allSent;
+                        return (
+                          <div
+                            key={w.id}
+                            className="bg-muted/30 border border-border rounded-lg p-4"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                {w.title && (
+                                  <p className="text-sm font-medium text-foreground mb-1 truncate">
+                                    {w.title}
+                                  </p>
+                                )}
+                                <div className="flex items-center gap-2 mb-1">
+                                  <p className="text-sm font-mono font-medium text-foreground">
+                                    Block {w.targetBlock.toLocaleString()}
+                                  </p>
+                                  <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                    w.network === "XRPL_EVM_MAINNET"
+                                      ? "bg-primary/20 text-primary"
+                                      : "bg-secondary/20 text-secondary"
+                                  }`}>
+                                    {w.network === "XRPL_EVM_MAINNET" ? "Mainnet" : "Testnet"}
+                                  </span>
+                                  {isCompleted ? (
+                                    <span className="text-xs bg-chart-2/20 text-chart-2 px-1.5 py-0.5 rounded">
+                                      Completed
+                                    </span>
+                                  ) : (
+                                    <span className="text-xs bg-chart-3/20 text-chart-3 px-1.5 py-0.5 rounded">
+                                      Active
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  Est. {formatDate(w.estimatedTime)}
+                                </p>
+                                <div className="flex gap-1 mt-2">
+                                  {w.notifications.map((n) => (
+                                    <span
+                                      key={n.tier}
+                                      title={`${n.tier.replace(/_/g, " ")} — ${n.sent ? "Sent" : "Pending"}`}
+                                      className={`w-2 h-2 rounded-full ${
+                                        n.sent ? "bg-chart-2" : "bg-muted-foreground/30"
+                                      }`}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                              {!isCompleted && (
+                                <button
+                                  onClick={() => handleCancelWatch(w.id)}
+                                  disabled={cancellingId === w.id}
+                                  className="text-xs px-3 py-1.5 bg-destructive/20 hover:bg-destructive/30 text-destructive-foreground rounded-lg transition-all disabled:opacity-50"
+                                >
+                                  {cancellingId === w.id ? "..." : "Cancel"}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
       )}

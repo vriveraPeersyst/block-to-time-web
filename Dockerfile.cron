@@ -1,5 +1,25 @@
-FROM alpine:3.20
-RUN apk add --no-cache curl
-COPY cron-notify.sh /cron-notify.sh
-RUN chmod +x /cron-notify.sh
-CMD ["/cron-notify.sh"]
+## Build stage – compile TS and generate Prisma client
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY prisma ./prisma
+RUN npm ci
+
+COPY cron/notify.ts ./cron/notify.ts
+COPY tsconfig.cron.json ./tsconfig.json
+RUN npx tsc --project tsconfig.json
+
+## Runtime stage – slim image with only prod deps
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY prisma ./prisma
+RUN npm ci --omit=dev
+
+COPY --from=builder /app/dist ./dist
+
+CMD ["node", "dist/cron/notify.js"]

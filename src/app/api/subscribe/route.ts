@@ -25,12 +25,14 @@ export async function POST(request: NextRequest) {
       timezone,
       slackWebhookUrl,
       email,
+      title,
     } = body as {
       targetBlock: number;
       network: Network;
       timezone?: string;
       slackWebhookUrl?: string;
       email?: string;
+      title?: string;
     };
 
     if (!targetBlock || !network) {
@@ -67,6 +69,7 @@ export async function POST(request: NextRequest) {
         currentBlock: BigInt(estimate.currentBlock),
         estimatedTime: estimate.estimatedDate,
         timezone: timezone ?? "UTC",
+        title: title ?? "",
         slackWebhookUrl: slackWebhookUrl ?? null,
         email: email ?? null,
         notifications: {

@@ -20,6 +20,7 @@ export async function GET() {
   return NextResponse.json(
     watches.map((w) => ({
       id: w.id,
+      title: w.title ?? "",
       targetBlock: Number(w.targetBlock),
       currentBlock: Number(w.currentBlock),
       network: w.network,
