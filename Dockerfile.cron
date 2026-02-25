@@ -1,0 +1,5 @@
+FROM alpine:3.20
+RUN apk add --no-cache curl
+COPY cron-notify.sh /cron-notify.sh
+RUN chmod +x /cron-notify.sh
+CMD ["/cron-notify.sh"]

@@ -742,9 +742,21 @@ export default function BlockEstimator() {
                         className="w-full px-4 py-2.5 bg-input border border-border rounded-lg text-foreground placeholder-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary text-sm"
                       />
                       <p className="text-xs text-muted-foreground/70 mt-1">
-                        You will receive updates at: 1 day, 6 hours, 1 hour, 15
-                        min, and 5 min before the estimated block time. Each
-                        update includes a fresh calendar link.
+                        {(() => {
+                          const tiers = [
+                            { label: "1 day", ms: 24 * 60 * 60 * 1000 },
+                            { label: "6 hours", ms: 6 * 60 * 60 * 1000 },
+                            { label: "1 hour", ms: 60 * 60 * 1000 },
+                            { label: "15 min", ms: 15 * 60 * 1000 },
+                            { label: "5 min", ms: 5 * 60 * 1000 },
+                          ];
+                          const remaining = estimate?.estimatedTimeMs ?? 0;
+                          const applicable = tiers.filter((t) => t.ms < remaining);
+                          if (applicable.length === 0) {
+                            return "You will be notified when the block is reached.";
+                          }
+                          return `You will receive ${applicable.length} update${applicable.length > 1 ? "s" : ""} at: ${applicable.map((t) => t.label).join(", ")} before the estimated block time. Each update includes a fresh calendar link.`;
+                        })()}
                       </p>
                     </div>
                     <div className="flex gap-2">

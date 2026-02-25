@@ -33,6 +33,7 @@ function formatTier(tier: string): string {
     ONE_HOUR: "1 hour",
     FIFTEEN_MINUTES: "15 minutes",
     FIVE_MINUTES: "5 minutes",
+    REACHED: "now",
   };
   return map[tier] ?? tier;
 }
@@ -54,7 +55,9 @@ export async function sendSlackNotification(
       type: "header",
       text: {
         type: "plain_text",
-        text: `⏰ Block ${payload.targetBlock.toLocaleString()} — ${formatTier(payload.tier)} away!`,
+        text: payload.tier === "REACHED"
+          ? `✅ Block ${payload.targetBlock.toLocaleString()} has been reached!`
+          : `⏰ Block ${payload.targetBlock.toLocaleString()} — ${formatTier(payload.tier)} away!`,
         emoji: true,
       },
     },
