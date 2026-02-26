@@ -83,6 +83,8 @@ export default function BlockEstimator() {
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [watchTitle, setWatchTitle] = useState("");
   const [watchTab, setWatchTab] = useState<"active" | "completed">("active");
+  const [useCustomBlockTime, setUseCustomBlockTime] = useState(false);
+  const [customBlockTime, setCustomBlockTime] = useState("");
 
   useEffect(() => {
     setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone);
@@ -170,9 +172,11 @@ export default function BlockEstimator() {
 
     try {
       const isoTime = new Date(targetTime).toISOString();
-      const res = await fetch(
-        `/api/time-to-block?time=${encodeURIComponent(isoTime)}&network=${network}`
-      );
+      let url = `/api/time-to-block?time=${encodeURIComponent(isoTime)}&network=${network}`;
+      if (useCustomBlockTime && customBlockTime) {
+        url += `&blockTime=${encodeURIComponent(customBlockTime)}`;
+      }
+      const res = await fetch(url);
       const data = await res.json();
 
       if (!res.ok) {
@@ -186,7 +190,7 @@ export default function BlockEstimator() {
     } finally {
       setLoading(false);
     }
-  }, [targetTime, network]);
+  }, [targetTime, network, useCustomBlockTime, customBlockTime]);
 
   const handleCancelWatch = async (watchId: string) => {
     setCancellingId(watchId);
@@ -489,19 +493,62 @@ export default function BlockEstimator() {
               />
             </div>
           ) : (
-            <div>
-              <label className="block text-sm font-medium text-muted-foreground mb-1.5">
-                Target Date & Time
-              </label>
-              <input
-                type="datetime-local"
-                value={targetTime}
-                onChange={(e) => setTargetTime(e.target.value)}
-                min={new Date().toISOString().slice(0, 16)}
-                className="w-full px-4 py-2.5 bg-input border border-border rounded-lg text-foreground placeholder-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all [color-scheme:dark]"
-                onKeyDown={(e) => e.key === "Enter" && handleTimeToBlock()}
-              />
-            </div>
+            <>
+              <div>
+                <label className="block text-sm font-medium text-muted-foreground mb-1.5">
+                  Target Date & Time
+                </label>
+                <input
+                  type="datetime-local"
+                  value={targetTime}
+                  onChange={(e) => setTargetTime(e.target.value)}
+                  min={new Date().toISOString().slice(0, 16)}
+                  className="w-full px-4 py-2.5 bg-input border border-border rounded-lg text-foreground placeholder-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all [color-scheme:dark]"
+                  onKeyDown={(e) => e.key === "Enter" && handleTimeToBlock()}
+                />
+              </div>
+
+              {/* Custom block time toggle */}
+              <div>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={useCustomBlockTime}
+                    onClick={() => setUseCustomBlockTime(!useCustomBlockTime)}
+                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+                      useCustomBlockTime ? "bg-primary" : "bg-muted-foreground/30"
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none block h-4 w-4 rounded-full bg-white shadow-lg ring-0 transition-transform ${
+                        useCustomBlockTime ? "translate-x-4" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
+                  <label className="text-sm font-medium text-muted-foreground">
+                    Custom block time
+                  </label>
+                </div>
+                {useCustomBlockTime && (
+                  <div className="animate-fade-in">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      value={customBlockTime}
+                      onChange={(e) => setCustomBlockTime(e.target.value)}
+                      placeholder="e.g. 3.85 (seconds per block)"
+                      className="w-full px-4 py-2.5 bg-input border border-border rounded-lg text-foreground placeholder-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+                      onKeyDown={(e) => e.key === "Enter" && handleTimeToBlock()}
+                    />
+                    <p className="text-xs text-muted-foreground/70 mt-1">
+                      Override the auto-detected average block time (in seconds).
+                    </p>
+                  </div>
+                )}
+              </div>
+            </>
           )}
 
           {/* Timezone */}
@@ -869,6 +916,9 @@ export default function BlockEstimator() {
                 </p>
                 <p className="text-foreground font-mono mt-0.5">
                   {(timeToBlockEstimate.avgBlockTimeMs / 1000).toFixed(2)}s
+                  {useCustomBlockTime && customBlockTime && (
+                    <span className="ml-1.5 text-xs text-chart-3">(custom)</span>
+                  )}
                 </p>
               </div>
             </div>
