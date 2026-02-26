@@ -215,14 +215,18 @@ export interface TimeToBlockEstimate {
 }
 
 /**
- * Reverse estimation: given a target time, estimate which block will be produced
+ * Reverse estimation: given a target time, estimate which block will be produced.
+ * Optionally accepts a custom block time in milliseconds to override the network average.
  */
 export async function estimateBlockAtTime(
   network: Network,
-  targetDate: Date
+  targetDate: Date,
+  customBlockTimeMs?: number
 ): Promise<TimeToBlockEstimate> {
-  const { currentBlock, avgBlockTimeMs, sources, confidence } =
+  const { currentBlock, avgBlockTimeMs: networkAvgBlockTimeMs, sources, confidence } =
     await gatherNetworkData(network);
+
+  const avgBlockTimeMs = customBlockTimeMs ?? networkAvgBlockTimeMs;
 
   const timeFromNowMs = targetDate.getTime() - Date.now();
 

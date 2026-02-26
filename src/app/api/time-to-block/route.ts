@@ -6,6 +6,7 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const time = searchParams.get("time");
   const network = searchParams.get("network") as Network | null;
+  const blockTimeParam = searchParams.get("blockTime");
 
   if (!time) {
     return NextResponse.json(
@@ -29,8 +30,20 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  let customBlockTimeMs: number | undefined;
+  if (blockTimeParam) {
+    const parsed = parseFloat(blockTimeParam);
+    if (isNaN(parsed) || parsed <= 0) {
+      return NextResponse.json(
+        { error: "Invalid blockTime. Must be a positive number in seconds." },
+        { status: 400 }
+      );
+    }
+    customBlockTimeMs = parsed * 1000;
+  }
+
   try {
-    const estimate = await estimateBlockAtTime(network, targetDate);
+    const estimate = await estimateBlockAtTime(network, targetDate, customBlockTimeMs);
     return NextResponse.json({
       ...estimate,
       targetDate: estimate.targetDate.toISOString(),
