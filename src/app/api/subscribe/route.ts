@@ -13,6 +13,13 @@ const TIER_OFFSETS: Record<NotificationTier, number> = {
   FIVE_MINUTES: 5 * 60 * 1000,
 };
 
+const ALLOWED_NETWORKS: Network[] = ["XRPL_EVM_MAINNET", "XRPL_EVM_TESTNET"];
+// Slack incoming webhook URLs always match this prefix
+const SLACK_WEBHOOK_REGEX = /^https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/_-]+$/;
+const MAX_TARGET_BLOCK = 1_000_000_000;
+const MAX_TITLE_LENGTH = 200;
+const MAX_TIMEZONE_LENGTH = 64;
+
 export async function POST(request: NextRequest) {
   try {
     const userId = await getAuthenticatedUserId();
@@ -38,6 +45,46 @@ export async function POST(request: NextRequest) {
     if (!targetBlock || !network) {
       return NextResponse.json(
         { error: "targetBlock and network are required." },
+        { status: 400 }
+      );
+    }
+
+    if (
+      typeof targetBlock !== "number" ||
+      !Number.isInteger(targetBlock) ||
+      targetBlock <= 0 ||
+      targetBlock > MAX_TARGET_BLOCK
+    ) {
+      return NextResponse.json(
+        { error: "targetBlock must be a positive integer." },
+        { status: 400 }
+      );
+    }
+
+    if (!ALLOWED_NETWORKS.includes(network)) {
+      return NextResponse.json(
+        { error: "Invalid network. Must be XRPL_EVM_MAINNET or XRPL_EVM_TESTNET." },
+        { status: 400 }
+      );
+    }
+
+    if (slackWebhookUrl && !SLACK_WEBHOOK_REGEX.test(slackWebhookUrl)) {
+      return NextResponse.json(
+        { error: "Invalid Slack webhook URL format." },
+        { status: 400 }
+      );
+    }
+
+    if (title !== undefined && (typeof title !== "string" || title.length > MAX_TITLE_LENGTH)) {
+      return NextResponse.json(
+        { error: `title must be at most ${MAX_TITLE_LENGTH} characters.` },
+        { status: 400 }
+      );
+    }
+
+    if (timezone !== undefined && (typeof timezone !== "string" || timezone.length > MAX_TIMEZONE_LENGTH)) {
+      return NextResponse.json(
+        { error: "Invalid timezone." },
         { status: 400 }
       );
     }
@@ -107,6 +154,12 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    // Surface block-already-reached errors as 422 (expected domain errors)
+    if (message.includes("already been reached")) {
+      return NextResponse.json({ error: message }, { status: 422 });
+    }
+    // For all other internal errors, return a generic message to avoid leaking details
+    console.error("[subscribe] Internal error:", message);
+    return NextResponse.json({ error: "Failed to create block watch. Please try again." }, { status: 500 });
   }
 }
