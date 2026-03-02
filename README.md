@@ -75,7 +75,7 @@ cp .env.example .env
 
 | Variable | Description |
 |----------|-------------|
-| `DATABASE_URL` | PostgreSQL connection string |
+| `DATABASE_URL` or `DATABASE_PUBLIC_URL` | PostgreSQL connection string |
 | `AUTH_SECRET` | Generate with `openssl rand -base64 32` |
 | `AUTH_URL` | Public URL of the app (must match OAuth redirect URI) |
 | `GOOGLE_CLIENT_ID` or `AUTH_GOOGLE_ID` | Google OAuth client ID |
