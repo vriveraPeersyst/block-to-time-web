@@ -119,7 +119,7 @@ export async function sendSlackNotification(
   });
 
   if (!res.ok) {
-    throw new Error(`Slack webhook failed: ${res.status} ${await res.text()}`);
+    throw new Error(`Slack webhook failed with status ${res.status}`);
   }
 }
 
