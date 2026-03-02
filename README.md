@@ -78,8 +78,8 @@ cp .env.example .env
 | `DATABASE_URL` | PostgreSQL connection string |
 | `AUTH_SECRET` | Generate with `openssl rand -base64 32` |
 | `AUTH_URL` | Public URL of the app (must match OAuth redirect URI) |
-| `GOOGLE_CLIENT_ID` | Google OAuth client ID |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
+| `GOOGLE_CLIENT_ID` or `AUTH_GOOGLE_ID` | Google OAuth client ID |
+| `GOOGLE_CLIENT_SECRET` or `AUTH_GOOGLE_SECRET` | Google OAuth client secret |
 | `CRON_SECRET` | Protects the `/api/cron/notify` endpoint |
 | `NEXT_PUBLIC_BASE_URL` | Public URL of the app (used for calendar links) |
 
